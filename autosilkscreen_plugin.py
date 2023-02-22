@@ -10,13 +10,16 @@ _ = gettext.gettext
 __deflate_factor__ = 0.9
 
 step = 0.25
-max_offset = 5
+max_offset = 3
+IGNORE_ALREADY_VALID = True
+
+# Postponed: handle non-rectangular FP
 
 def isSilkscreen(item):
     return item is not None and (item.IsOnLayer(pcbnew.B_SilkS) or item.IsOnLayer(pcbnew.F_SilkS)) and item.IsVisible()
 
+# To consider: via, other things on SS, courtyard (only same layer)
 def isPositionValid(item,modules):
-
     bb = item.GetBoundingBox()
     bb.SetSize(int(bb.GetWidth()*__deflate_factor__),int(bb.GetHeight()*__deflate_factor__))
     for fp in modules:
@@ -28,6 +31,9 @@ def decimal_range(start, stop, increment):
     while start < stop and not math.isclose(start, stop):
         yield start
         start += increment
+
+def log(msg):
+    wx.LogMessage(str(msg))
 
 class AutoSilkscreenPlugin(ActionPlugin):
     def defaults(self):
@@ -48,55 +54,61 @@ class AutoSilkscreenPlugin(ActionPlugin):
             self.ToUserUnit = pcbnew.ToMM
             self.FromUserUnit = pcbnew.FromMM
 
-        if hasattr(self.board, 'GetModules'):
+        modules = self.board.GetFootprints()
 
-            modules = self.board.GetModules()
-        else:
-            modules = self.board.GetFootprints()
-        txt=""
         for fp in modules:
             ref = fp.Reference()
             if not isSilkscreen(ref): continue
+
+            if not IGNORE_ALREADY_VALID and isPositionValid(ref,modules): continue
+
+            ref_bb = ref.GetBoundingBox()
+            fp_bb = fp.GetBoundingBox(False,False)
+
+            # -----------
+            initial_pos = ref.GetPosition()
+            try:
+                for i in decimal_range(0, max_offset, step):
+                    # Sweep x coords: top (left/right from center), bottom (left/right from center)
+                    for j in decimal_range(0, self.ToUserUnit(fp_bb.GetWidth()/2), step):
+                        ref.SetY(int(fp_bb.GetTop() - ref_bb.GetHeight()/2.0*__deflate_factor__ - self.FromUserUnit(i)))
+                        ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+
+                        ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+
+                        ref.SetY(int(fp_bb.GetBottom() + ref_bb.GetHeight()/2.0*__deflate_factor__ + self.FromUserUnit(i)))
+                        ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+
+                        ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+
+                    # Sweep y coords: left (top/bot from center), right (top/bot from center)
+                    for j in decimal_range(0, self.ToUserUnit(fp_bb.GetHeight()/2), step):
+                        ref.SetX(int(fp_bb.GetLeft() - ref_bb.GetWidth()/2.0*__deflate_factor__ - self.FromUserUnit(i)))
+                        ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+
+                        ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+
+                        ref.SetX(int(fp_bb.GetRight() + ref_bb.GetWidth()/2.0*__deflate_factor__ + self.FromUserUnit(i)))
+                        ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+
+                        ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(i+j)))
+                        if isPositionValid(ref,modules): raise StopIteration 
+                # Resest to default position if not able to be moved
+                ref.SetPosition(initial_pos)
+                log(str(fp.GetReference())+" couldn't be moved!")
+            except StopIteration:
+                log(str(fp.GetReference())+" moved!")
+                pass
 
             # WORKS but only detects vertect colision
             # fp_shape = fp.GetEffectiveShape(pcbnew.F_CrtYd)
             # ref_shape = ref.GetEffectiveShape(pcbnew.F_SilkS)
             # txt += str(ref.GetShownText())+ " -> "+str(fp_shape.Collide(ref_shape)) + "\n"
-
-            # ref.SetX(ref.GetX()+self.FromUserUnit(float(1)))
-            if isPositionValid(ref,modules): continue
-
-            # initial_x, initial_y = ref.GetX(),ref.GetY()
-            initial_x, initial_y = fp.GetPosition()
-            for i in decimal_range(step, max_offset, step):
-                ref.SetX(initial_x-self.FromUserUnit(float(i)))
-                ref.SetY(initial_y)
-                if isPositionValid(ref,modules): break
-                ref.SetX(initial_x) #cent-bot
-                ref.SetY(initial_y+self.FromUserUnit(float(i)))
-                if isPositionValid(ref,modules): break
-                ref.SetX(initial_x+self.FromUserUnit(float(i)))
-                ref.SetY(initial_y) #right
-                if isPositionValid(ref,modules): break 
-                ref.SetX(initial_x)
-                ref.SetY(initial_y-self.FromUserUnit(float(i))) #cent-top
-                if isPositionValid(ref,modules): break
-                ref.SetX(initial_x-self.FromUserUnit(float(i)))
-                ref.SetY(initial_y-self.FromUserUnit(float(i))) #left-top
-                if isPositionValid(ref,modules): break 
-                ref.SetX(initial_x-self.FromUserUnit(float(i)))
-                ref.SetY(initial_y+self.FromUserUnit(float(i))) #left-bot
-                if isPositionValid(ref,modules): break
-                ref.SetX(initial_x+self.FromUserUnit(float(i)))
-                ref.SetX(initial_x+self.FromUserUnit(float(i))) #right-top
-                if isPositionValid(ref,modules): break
-                ref.SetX(initial_x+self.FromUserUnit(float(i)))
-                ref.SetY(initial_y+self.FromUserUnit(float(i))) #right-bot
-                if isPositionValid(ref,modules): break
-                #fix me: don't move if fail
-
-            txt += str(ref.GetShownText())+ " -> "+str(isPositionValid(ref,modules)) + "\n"
-            
-
-        # wx.MessageBox(txt)
             
