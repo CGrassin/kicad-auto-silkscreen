@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="100.6002mm"
+   height="100.60019mm"
+   viewBox="0 0 100.6002 100.60019"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
+   sodipodi:docname="logo.svg"
+   inkscape:export-filename="/home/charles/.local/share/kicad/7.0/scripting/plugins/auto-silkscreen/logo.png"
+   inkscape:export-xdpi="8.0799999"
+   inkscape:export-ydpi="8.0799999"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:document-units="mm"
+     showgrid="true"
+     inkscape:zoom="2.8792367"
+     inkscape:cx="241.55708"
+     inkscape:cy="205.43639"
+     inkscape:window-width="1920"
+     inkscape:window-height="1016"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0">
+    <inkscape:grid
+       type="xygrid"
+       id="grid2569"
+       originx="-49.699902"
+       originy="-49.699901"
+       spacingx="1.3229167"
+       spacingy="1.3229167" />
+  </sodipodi:namedview>
+  <defs
+     id="defs2" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-49.699901,-49.699901)">
+    <rect
+       style="fill:#669900;stroke:#656565;stroke-width:1.127;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect846"
+       width="99.473"
+       height="99.47319"
+       x="50.263401"
+       y="50.263401"
+       ry="15.882432" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:35.2778px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:#4c4c4c;stroke-width:0.565;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       x="53.789856"
+       y="86.417694"
+       id="text10066"><tspan
+         sodipodi:role="line"
+         id="tspan10064"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:35.2778px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';fill:#ffffff;stroke:#4c4c4c;stroke-width:0.565;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+         x="53.789856"
+         y="86.417694">R1</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:35.2778px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:#4c4c4c;stroke-width:0.565;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       x="-143.22527"
+       y="95.631607"
+       id="text10066-7"
+       transform="rotate(-90)"><tspan
+         sodipodi:role="line"
+         id="tspan10064-5"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:35.2778px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';fill:#ffffff;stroke:#4c4c4c;stroke-width:0.565;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+         x="-143.22527"
+         y="95.631607">C2</tspan></text>
+    <path
+       id="rect7078"
+       style="fill:#f44336;fill-opacity:1;stroke:#000000;stroke-width:0.765;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;paint-order:normal"
+       d="m 105.83333,72.760418 9.26042,-9.260416 v 3.96875 c 35.72326,-1.163281 34.85928,55.783068 0,56.885418 v 3.96875 l -9.26041,-9.26042 9.26041,-9.26041 v 3.96875 c 20.32587,-1.25998 22.02755,-36.903636 0,-35.718755 v 3.96875 z"
+       sodipodi:nodetypes="ccccccccccc" />
+  </g>
+</svg>
