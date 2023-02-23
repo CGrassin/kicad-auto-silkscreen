@@ -70,45 +70,40 @@ class AutoSilkscreenPlugin(ActionPlugin):
             try:
                 for i in decimal_range(0, max_offset, step):
                     # Sweep x coords: top (left/right from center), bottom (left/right from center)
-                    for j in decimal_range(0, self.ToUserUnit(fp_bb.GetWidth()/2), step):
+                    for j in decimal_range(0, self.ToUserUnit(fp_bb.GetWidth()/2) + i, step):
                         ref.SetY(int(fp_bb.GetTop() - ref_bb.GetHeight()/2.0*__deflate_factor__ - self.FromUserUnit(i)))
-                        ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(i+j)))
+                        ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
 
-                        ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(i+j)))
+                        ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
 
                         ref.SetY(int(fp_bb.GetBottom() + ref_bb.GetHeight()/2.0*__deflate_factor__ + self.FromUserUnit(i)))
-                        ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(i+j)))
+                        ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
 
-                        ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(i+j)))
+                        ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
 
                     # Sweep y coords: left (top/bot from center), right (top/bot from center)
-                    for j in decimal_range(0, self.ToUserUnit(fp_bb.GetHeight()/2), step):
+                    for j in decimal_range(0, self.ToUserUnit(fp_bb.GetHeight()/2) + i, step):
                         ref.SetX(int(fp_bb.GetLeft() - ref_bb.GetWidth()/2.0*__deflate_factor__ - self.FromUserUnit(i)))
-                        ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(i+j)))
+                        ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
 
-                        ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(i+j)))
+                        ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
 
                         ref.SetX(int(fp_bb.GetRight() + ref_bb.GetWidth()/2.0*__deflate_factor__ + self.FromUserUnit(i)))
-                        ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(i+j)))
+                        ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
 
-                        ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(i+j)))
+                        ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(j)))
                         if isPositionValid(ref,modules): raise StopIteration 
                 # Resest to default position if not able to be moved
                 ref.SetPosition(initial_pos)
-                log(str(fp.GetReference())+" couldn't be moved!")
+                log("{} couldn't be moved".format(str(fp.GetReference())))
             except StopIteration:
-                log(str(fp.GetReference())+" moved!")
-                pass
-
-            # WORKS but only detects vertect colision
-            # fp_shape = fp.GetEffectiveShape(pcbnew.F_CrtYd)
-            # ref_shape = ref.GetEffectiveShape(pcbnew.F_SilkS)
-            # txt += str(ref.GetShownText())+ " -> "+str(fp_shape.Collide(ref_shape)) + "\n"
+                log("{} moved to ({:.2f},{:.2f})".format(str(fp.GetReference()), self.ToUserUnit(ref.GetPosition().x), self.ToUserUnit(ref.GetPosition().y)))
+        log('Finished')
             
