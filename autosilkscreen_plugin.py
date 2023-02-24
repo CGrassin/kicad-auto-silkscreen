@@ -3,7 +3,7 @@ import pcbnew
 import gettext
 import wx,math
 
-from pcbnew import ActionPlugin, GetBoard, SHAPE_POLY_SET, VECTOR2I
+from pcbnew import ActionPlugin, GetBoard, SHAPE_POLY_SET, VECTOR2I, PCB_VIA
 
 _ = gettext.gettext
 
@@ -23,14 +23,12 @@ def BB_in_SHAPE_POLY_SET(bb,poly,all_in=False):
         return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom()))
     return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom()))
 
-# To consider: via, other things on SS, courtyard (only same layer)
-def isPositionValid(item,modules,pcb):
+# To consider: other things on SS,
+def isPositionValid(item, modules, board_edge, vias):
     bb = item.GetBoundingBox() # BOX2I
     bb.SetSize(int(bb.GetWidth()*__deflate_factor__),int(bb.GetHeight()*__deflate_factor__))
 
     # Check if ref is inside PCB outline
-    board_edge = SHAPE_POLY_SET()
-    pcb.GetBoardPolygonOutlines(board_edge)
     if not BB_in_SHAPE_POLY_SET(bb, board_edge,True):
         return False
 
@@ -38,18 +36,22 @@ def isPositionValid(item,modules,pcb):
     for fp in modules:
         # Collide with Ctyd
         fp_shape = fp.GetCourtyard(item.GetLayer()) # SHAPE_POLY_SET
-        if BB_in_SHAPE_POLY_SET(bb,fp_shape):
+        if BB_in_SHAPE_POLY_SET(bb, fp_shape):
             return False
 
         # Collide with Reference TODO: algo improvement nudge it?
         ref = fp.Reference()
         if ref.GetText() != item.GetText() and isSilkscreen(ref) and ref.IsOnLayer(item.GetLayer()) and bb.Intersects(ref.GetBoundingBox()):
-            pass
             return False
 
-        # TODO
-        # if fp.GetCourtyard(item.GetLayer()).BooleanIntersection(bb,SHAPE_POLY_SET.PM_FAST).OutlineCount() > 0: #SHAPE_POLY_SET
-        #     return False
+    # Check if ref is colliding with any via
+    for via in vias:
+        if (via.TopLayer() == pcbnew.F_Cu and item.IsOnLayer(pcbnew.F_SilkS)) or (via.BottomLayer() == pcbnew.B_Cu and item.IsOnLayer(pcbnew.B_SilkS)):
+            if bb.Intersects(via.GetBoundingBox()):
+                return False
+
+    # Check if via is colliding with any drawing
+    # TODO
     return True
 
 def decimal_range(start, stop, increment):
@@ -69,8 +71,9 @@ class AutoSilkscreenPlugin(ActionPlugin):
         self.icon_file_name = os.path.join(os.path.dirname(__file__), 'logo.png')
 
     def Run(self):
-        self.board = pcbnew.GetBoard()
+        self.pcb = pcbnew.GetBoard()
         
+        # Get unit conversion functions
         units_mode = pcbnew.GetUserUnits()
         if units_mode == 0:
             self.ToUserUnit = pcbnew.ToMils
@@ -79,13 +82,24 @@ class AutoSilkscreenPlugin(ActionPlugin):
             self.ToUserUnit = pcbnew.ToMM
             self.FromUserUnit = pcbnew.FromMM
 
-        modules = self.board.GetFootprints()
+        # Get the vias
+        vias = []
+        for via in self.pcb.Tracks():
+            if isinstance(via,PCB_VIA):
+                if via.TopLayer() == pcbnew.F_Cu or via.BottomLayer() == pcbnew.B_Cu:
+                    vias.append(via)
 
+        # Get board outline
+        board_edge = SHAPE_POLY_SET()
+        self.pcb.GetBoardPolygonOutlines(board_edge)
+
+        # Get footprints
+        modules = self.pcb.GetFootprints()
         for fp in modules:
             ref = fp.Reference()
 
             if not isSilkscreen(ref): continue
-            if not IGNORE_ALREADY_VALID and isPositionValid(ref,modules,self.board): continue
+            if not IGNORE_ALREADY_VALID and isPositionValid(ref,modules, board_edge, vias): continue
 
             ref_bb = ref.GetBoundingBox()
             fp_bb = fp.GetBoundingBox(False,False)
@@ -98,33 +112,33 @@ class AutoSilkscreenPlugin(ActionPlugin):
                     for j in decimal_range(0, self.ToUserUnit(fp_bb.GetWidth()/2) + i, step):
                         ref.SetY(int(fp_bb.GetTop() - ref_bb.GetHeight()/2.0*__deflate_factor__ - self.FromUserUnit(i)))
                         ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
 
                         ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
 
                         ref.SetY(int(fp_bb.GetBottom() + ref_bb.GetHeight()/2.0*__deflate_factor__ + self.FromUserUnit(i)))
                         ref.SetX(int(fp_bb.GetCenter().x - self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
 
                         ref.SetX(int(fp_bb.GetCenter().x + self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
 
                     # Sweep y coords: left (top/bot from center), right (top/bot from center)
                     for j in decimal_range(0, self.ToUserUnit(fp_bb.GetHeight()/2) + i, step):
                         ref.SetX(int(fp_bb.GetLeft() - ref_bb.GetWidth()/2.0*__deflate_factor__ - self.FromUserUnit(i)))
                         ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
 
                         ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
 
                         ref.SetX(int(fp_bb.GetRight() + ref_bb.GetWidth()/2.0*__deflate_factor__ + self.FromUserUnit(i)))
                         ref.SetY(int(fp_bb.GetCenter().y - self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
 
                         ref.SetY(int(fp_bb.GetCenter().y + self.FromUserUnit(j)))
-                        if isPositionValid(ref,modules,self.board): raise StopIteration 
+                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
                 # Resest to default position if not able to be moved
                 ref.SetPosition(initial_pos)
                 log("{} couldn't be moved".format(str(fp.GetReference())))
