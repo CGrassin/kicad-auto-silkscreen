@@ -5,17 +5,11 @@ import wx, math
 
 from pcbnew import ActionPlugin, GetBoard, SHAPE_POLY_SET, VECTOR2I, PCB_VIA
 
-_ = gettext.gettext
+from . import auto_silkscreen_dialog
 
 __deflate_factor__ = 0.9
 
-step = 0.25
-max_offset = 3
-
 IGNORE_ALREADY_VALID = True
-ONLY_PROCESS_SELECTION = True
-
-# Postponed: handle non-rectangular FP
 
 def isSilkscreen(item):
     return item is not None and (item.IsOnLayer(pcbnew.B_SilkS) or item.IsOnLayer(pcbnew.F_SilkS)) and item.IsVisible()
@@ -25,7 +19,6 @@ def BB_in_SHAPE_POLY_SET(bb,poly,all_in=False):
         return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom()))
     return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom()))
 
-# To consider: other things on SS,
 def isPositionValid(item, modules, board_edge, vias):
     bb = item.GetBoundingBox() # BOX2I
     bb.SetSize(int(bb.GetWidth()*__deflate_factor__),int(bb.GetHeight()*__deflate_factor__))
@@ -54,6 +47,8 @@ def isPositionValid(item, modules, board_edge, vias):
 
     # Check if via is colliding with any drawing
     # TODO
+    # for dwg in drawings:
+
     return True
 
 def decimal_range(start, stop, increment):
@@ -67,115 +62,128 @@ def log(msg):
 def distance(a,b):
     return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
-class AutoSilkscreenPlugin(ActionPlugin):
+def optimize(max_offset,step,only_process_selection):
+    pcb = pcbnew.GetBoard()
+    nb_total = 0
+    nb_moved = 0
+
+    units_mode = pcbnew.GetUserUnits()
+    # if units_mode == 0:
+    #     self.ToUserUnit = pcbnew.ToMils
+    #     self.FromUserUnit = pcbnew.FromMils
+    # elif units_mode == 1:
+    ToUserUnit = pcbnew.ToMM
+    FromUserUnit = pcbnew.FromMM
+    step_units = FromUserUnit(step)
+    max_offset_units = FromUserUnit(max_offset)
+
+    # Get board outline
+    board_edge = SHAPE_POLY_SET()
+    pcb.GetBoardPolygonOutlines(board_edge)
+
+    # Get the vias (except burried vias)
+    vias_all = []
+    for via in pcb.Tracks():
+        if isinstance(via,PCB_VIA):
+            if via.TopLayer() == pcbnew.F_Cu or via.BottomLayer() == pcbnew.B_Cu:
+                vias_all.append(via)
+
+    # Loop over each component of the PCB
+    for fp in pcb.GetFootprints():
+        if only_process_selection and not fp.IsSelected():
+            continue
+
+        ref = fp.Reference()
+        ref_bb = ref.GetBoundingBox()
+        fp_bb = fp.GetBoundingBox(False,False)
+
+        if not isSilkscreen(ref): continue
+        if not IGNORE_ALREADY_VALID and isPositionValid(ref,modules, board_edge, vias): continue
+
+        nb_total += 1
+        max_fp_size = max(fp_bb.GetWidth(),fp_bb.GetHeight()) + max(ref_bb.GetWidth(),ref_bb.GetHeight()) + max_offset_units
+
+        # Filter the vias
+        vias = []
+        for via in vias_all:
+            max_via_size = max(via.GetBoundingBox().GetHeight(), via.GetBoundingBox().GetWidth())
+            if distance(ref_bb.GetCenter(),via.GetBoundingBox().GetCenter()) < max_fp_size + max_via_size:
+                vias.append(via)
+            # else:
+            #     log("Via is further than max distance, ignored")
+
+        # Get and filter footprints
+        modules = []
+        for module in pcb.GetFootprints():
+            max_module_size = max(module.GetBoundingBox().GetHeight(), module.GetBoundingBox().GetWidth())
+            if distance(ref_bb.GetCenter(),module.GetBoundingBox().GetCenter()) < max_fp_size + max_module_size:
+                modules.append(module)
+            # else:
+            #     log("FP is further than max distance, ignored")
+
+        # Sweep positions
+        initial_pos = ref.GetPosition()
+        try:
+            for i in decimal_range(0, max_offset_units, step_units):
+                # Sweep x coords: top (left/right from center), bottom (left/right from center)
+                for j in decimal_range(0, fp_bb.GetWidth()/2 + i, step_units):
+                    ref.SetY(int(fp_bb.GetTop() - ref_bb.GetHeight()/2.0*__deflate_factor__ - i))
+                    ref.SetX(int(fp_bb.GetCenter().x - j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+
+                    ref.SetX(int(fp_bb.GetCenter().x + j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+
+                    ref.SetY(int(fp_bb.GetBottom() + ref_bb.GetHeight()/2.0*__deflate_factor__ + i))
+                    ref.SetX(int(fp_bb.GetCenter().x - j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+
+                    ref.SetX(int(fp_bb.GetCenter().x + j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+
+                # Sweep y coords: left (top/bot from center), right (top/bot from center)
+                for j in decimal_range(0, fp_bb.GetHeight()/2 + i, step_units):
+                    ref.SetX(int(fp_bb.GetLeft() - ref_bb.GetWidth()/2.0*__deflate_factor__ - i))
+                    ref.SetY(int(fp_bb.GetCenter().y - j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+
+                    ref.SetY(int(fp_bb.GetCenter().y + j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+
+                    ref.SetX(int(fp_bb.GetRight() + ref_bb.GetWidth()/2.0*__deflate_factor__ + i))
+                    ref.SetY(int(fp_bb.GetCenter().y - j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+
+                    ref.SetY(int(fp_bb.GetCenter().y + j))
+                    if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
+            # Resest to default position if not able to be moved
+            ref.SetPosition(initial_pos)
+            log("{} couldn't be moved".format(str(fp.GetReference())))
+        except StopIteration:
+            log("{} moved to ({:.2f},{:.2f})".format(str(fp.GetReference()), ToUserUnit(ref.GetPosition().x), ToUserUnit(ref.GetPosition().y)))
+            nb_moved += 1
+
+    log('Finished ({}/{} moved)'.format(nb_moved,nb_total))
+
+class AutoSilkscreenPlugin(pcbnew.ActionPlugin):
     def defaults(self):
-        self.name = _(u"AutoSilkscreen")
-        self.category = _(u"Modify PCB")
-        self.description = _(u"Moves silkscreen")
+        self.name = u"AutoSilkscreen"
+        self.category = u"Modify PCB"
+        self.description = u"Moves silkscreen"
         self.show_toolbar_button = True
         self.icon_file_name = os.path.join(os.path.dirname(__file__), 'logo.png')
 
     def Run(self):
-        self.pcb = pcbnew.GetBoard()
-
-        nb_total = 0
-        nb_moved = 0
-
-        # Get unit conversion functions
-        units_mode = pcbnew.GetUserUnits()
-        if units_mode == 0:
-            self.ToUserUnit = pcbnew.ToMils
-            self.FromUserUnit = pcbnew.FromMils
-        elif units_mode == 1:
-            self.ToUserUnit = pcbnew.ToMM
-            self.FromUserUnit = pcbnew.FromMM
-        step_units = self.FromUserUnit(step)
-        max_offset_units = self.FromUserUnit(max_offset)
-
-        # Get board outline
-        board_edge = SHAPE_POLY_SET()
-        self.pcb.GetBoardPolygonOutlines(board_edge)
-
-        # Get the vias (except burried vias)
-        vias_all = []
-        for via in self.pcb.Tracks():
-            if isinstance(via,PCB_VIA):
-                if via.TopLayer() == pcbnew.F_Cu or via.BottomLayer() == pcbnew.B_Cu:
-                    vias_all.append(via)
-
-        # Loop over each component of the PCB
-        for fp in self.pcb.GetFootprints():
-            if ONLY_PROCESS_SELECTION and not fp.IsSelected():
-                continue
-
-            ref = fp.Reference()
-            ref_bb = ref.GetBoundingBox()
-            fp_bb = fp.GetBoundingBox(False,False)
-
-            if not isSilkscreen(ref): continue
-            if not IGNORE_ALREADY_VALID and isPositionValid(ref,modules, board_edge, vias): continue
-
-            nb_total += 1
-            max_fp_size = max(fp_bb.GetWidth(),fp_bb.GetHeight()) + max(ref_bb.GetWidth(),ref_bb.GetHeight()) + max_offset_units
-
-            # Filter the vias
-            vias = []
-            for via in vias_all:
-                max_via_size = max(via.GetBoundingBox().GetHeight(), via.GetBoundingBox().GetWidth())
-                if distance(ref_bb.GetCenter(),via.GetBoundingBox().GetCenter()) < max_fp_size + max_via_size:
-                    vias.append(via)
-                # else:
-                #     log("Via is further than max distance, ignored")
-
-            # Get and filter footprints
-            modules = []
-            for module in self.pcb.GetFootprints():
-                max_module_size = max(module.GetBoundingBox().GetHeight(), module.GetBoundingBox().GetWidth())
-                if distance(ref_bb.GetCenter(),module.GetBoundingBox().GetCenter()) < max_fp_size + max_module_size:
-                    modules.append(module)
-                # else:
-                #     log("FP is further than max distance, ignored")
-
-            # -----------
-            initial_pos = ref.GetPosition()
+        dialog = auto_silkscreen_dialog.AutoSilkscreenDialog(None)
+        modal_result = dialog.ShowModal()
+        if modal_result == wx.ID_OK:
             try:
-                for i in decimal_range(0, max_offset_units, step_units):
-                    # Sweep x coords: top (left/right from center), bottom (left/right from center)
-                    for j in decimal_range(0, fp_bb.GetWidth()/2 + i, step_units):
-                        ref.SetY(int(fp_bb.GetTop() - ref_bb.GetHeight()/2.0*__deflate_factor__ - i))
-                        ref.SetX(int(fp_bb.GetCenter().x - j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-
-                        ref.SetX(int(fp_bb.GetCenter().x + j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-
-                        ref.SetY(int(fp_bb.GetBottom() + ref_bb.GetHeight()/2.0*__deflate_factor__ + i))
-                        ref.SetX(int(fp_bb.GetCenter().x - j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-
-                        ref.SetX(int(fp_bb.GetCenter().x + j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-
-                    # Sweep y coords: left (top/bot from center), right (top/bot from center)
-                    for j in decimal_range(0, fp_bb.GetHeight()/2 + i, step_units):
-                        ref.SetX(int(fp_bb.GetLeft() - ref_bb.GetWidth()/2.0*__deflate_factor__ - i))
-                        ref.SetY(int(fp_bb.GetCenter().y - j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-
-                        ref.SetY(int(fp_bb.GetCenter().y + j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-
-                        ref.SetX(int(fp_bb.GetRight() + ref_bb.GetWidth()/2.0*__deflate_factor__ + i))
-                        ref.SetY(int(fp_bb.GetCenter().y - j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-
-                        ref.SetY(int(fp_bb.GetCenter().y + j))
-                        if isPositionValid(ref,modules, board_edge, vias): raise StopIteration 
-                # Resest to default position if not able to be moved
-                ref.SetPosition(initial_pos)
-                log("{} couldn't be moved".format(str(fp.GetReference())))
-            except StopIteration:
-                log("{} moved to ({:.2f},{:.2f})".format(str(fp.GetReference()), self.ToUserUnit(ref.GetPosition().x), self.ToUserUnit(ref.GetPosition().y)))
-                nb_moved += 1
-        log('Finished ({}/{} moved)'.format(nb_moved,nb_total))
+                max_d = float(dialog.m_maxDistance.GetValue().replace(',', '.'))
+                step_size = float(dialog.m_stepSize.GetValue().replace(',', '.'))
+                if max_d <= 0 or step_size <= 0:
+                    raise ValueError
+                optimize(max_d, step_size, dialog.m_onlyProcessSelection.IsChecked())
+            except ValueError:
+                wx.MessageBox("Invalid value entered.")
+        dialog.Destroy()
             
