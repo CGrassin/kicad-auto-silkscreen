@@ -1,7 +1,7 @@
 import os
 import pcbnew
 import gettext
-import wx,math
+import wx, math
 
 from pcbnew import ActionPlugin, GetBoard, SHAPE_POLY_SET, VECTOR2I, PCB_VIA
 
@@ -11,7 +11,9 @@ __deflate_factor__ = 0.9
 
 step = 0.25
 max_offset = 3
+
 IGNORE_ALREADY_VALID = True
+ONLY_PROCESS_SELECTION = True
 
 # Postponed: handle non-rectangular FP
 
@@ -75,7 +77,10 @@ class AutoSilkscreenPlugin(ActionPlugin):
 
     def Run(self):
         self.pcb = pcbnew.GetBoard()
-        
+
+        nb_total = 0
+        nb_moved = 0
+
         # Get unit conversion functions
         units_mode = pcbnew.GetUserUnits()
         if units_mode == 0:
@@ -91,8 +96,18 @@ class AutoSilkscreenPlugin(ActionPlugin):
         board_edge = SHAPE_POLY_SET()
         self.pcb.GetBoardPolygonOutlines(board_edge)
 
+        # Get the vias (except burried vias)
+        vias_all = []
+        for via in self.pcb.Tracks():
+            if isinstance(via,PCB_VIA):
+                if via.TopLayer() == pcbnew.F_Cu or via.BottomLayer() == pcbnew.B_Cu:
+                    vias_all.append(via)
+
         # Loop over each component of the PCB
         for fp in self.pcb.GetFootprints():
+            if ONLY_PROCESS_SELECTION and not fp.IsSelected():
+                continue
+
             ref = fp.Reference()
             ref_bb = ref.GetBoundingBox()
             fp_bb = fp.GetBoundingBox(False,False)
@@ -100,20 +115,19 @@ class AutoSilkscreenPlugin(ActionPlugin):
             if not isSilkscreen(ref): continue
             if not IGNORE_ALREADY_VALID and isPositionValid(ref,modules, board_edge, vias): continue
 
+            nb_total += 1
             max_fp_size = max(fp_bb.GetWidth(),fp_bb.GetHeight()) + max(ref_bb.GetWidth(),ref_bb.GetHeight()) + max_offset_units
 
-            # Get the vias
+            # Filter the vias
             vias = []
-            for via in self.pcb.Tracks():
-                if isinstance(via,PCB_VIA):
-                    if via.TopLayer() == pcbnew.F_Cu or via.BottomLayer() == pcbnew.B_Cu:
-                        max_via_size = max(via.GetBoundingBox().GetHeight(), via.GetBoundingBox().GetWidth())
-                        if distance(ref_bb.GetCenter(),via.GetBoundingBox().GetCenter()) < max_fp_size + max_via_size:
-                            vias.append(via)
-                        # else:
-                        #     log("Via is further than max distance, ignored")
+            for via in vias_all:
+                max_via_size = max(via.GetBoundingBox().GetHeight(), via.GetBoundingBox().GetWidth())
+                if distance(ref_bb.GetCenter(),via.GetBoundingBox().GetCenter()) < max_fp_size + max_via_size:
+                    vias.append(via)
+                # else:
+                #     log("Via is further than max distance, ignored")
 
-            # Get footprints
+            # Get and filter footprints
             modules = []
             for module in self.pcb.GetFootprints():
                 max_module_size = max(module.GetBoundingBox().GetHeight(), module.GetBoundingBox().GetWidth())
@@ -162,5 +176,6 @@ class AutoSilkscreenPlugin(ActionPlugin):
                 log("{} couldn't be moved".format(str(fp.GetReference())))
             except StopIteration:
                 log("{} moved to ({:.2f},{:.2f})".format(str(fp.GetReference()), self.ToUserUnit(ref.GetPosition().x), self.ToUserUnit(ref.GetPosition().y)))
-        log('Finished')
+                nb_moved += 1
+        log('Finished ({}/{} moved)'.format(nb_moved,nb_total))
             
