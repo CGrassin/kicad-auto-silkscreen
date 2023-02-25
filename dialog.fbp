@@ -47,7 +47,7 @@
             <property name="minimum_size"></property>
             <property name="name">AutoSilkscreenDialog</property>
             <property name="pos"></property>
-            <property name="size">300,300</property>
+            <property name="size">300,350</property>
             <property name="style">wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER</property>
             <property name="subclass">; ; forward_declare</property>
             <property name="title">Auto Silkscreen Parameters</property>

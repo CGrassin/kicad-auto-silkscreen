@@ -11,9 +11,7 @@ from . import auto_silkscreen_dialog
 # * Handle Solder Mask collision
 # * Handle Drawings collision
 # * Optimization: sort items in quads, only look for neighboring quads.
-# * Reduce text size
-
-IGNORE_ALREADY_VALID = False
+# * Reduce text size option
 
 def isSilkscreen(item):
     """Checks if an item is a visible silkscreen item."""
@@ -51,23 +49,23 @@ def filter_distance(item_center, max_d, list_items):
 class AutoSilkscreen:
     def __init__(self):
         self.pcb = pcbnew.GetBoard()
-        self.set_max_offset_units(3)
-        self.set_step_units(0.25)
+        self.set_max_allowed_distance(3)
+        self.set_step_size(0.25)
         self.set_only_process_selection(False)
         self.set_debug(False)
         self.set_ignore_vias(False)
         self.__deflate_factor__ = 1
 
     # Setters
-    def set_max_offset_units(self, max_offset_units : float):
-        if max_offset_units <= 0:
+    def set_max_allowed_distance(self, max_allowed_distance : float):
+        if max_allowed_distance <= 0:
             raise ValueError
-        self.max_offset_units = pcbnew.FromMM(max_offset_units)
+        self.max_allowed_distance = pcbnew.FromMM(max_allowed_distance)
         return self
-    def set_step_units(self, step_units : float):
-        if step_units <= 0:
+    def set_step_size(self, step_size : float):
+        if step_size <= 0:
             raise ValueError
-        self.step_units = pcbnew.FromMM(step_units)
+        self.step_size = pcbnew.FromMM(step_size)
         return self
     def set_only_process_selection(self, only_process_selection : bool):
         self.only_process_selection = only_process_selection
@@ -88,44 +86,46 @@ class AutoSilkscreen:
         * Not colliding with the reference of any component
         * Not colliding with the value of any component
         """
-        bb = item.GetBoundingBox() # BOX2I
-        bb.SetSize(int(bb.GetWidth()*self.__deflate_factor__),int(bb.GetHeight()*self.__deflate_factor__))
+        bb_item = item.GetBoundingBox() # BOX2I
+        bb_item.SetSize(int(bb_item.GetWidth()*self.__deflate_factor__),int(bb_item.GetHeight()*self.__deflate_factor__))
+        item_shape = item.GetEffectiveShape()
 
         # Check if ref is inside PCB outline
-        if not BB_in_SHAPE_POLY_SET(bb, board_edge, True):
+        if not BB_in_SHAPE_POLY_SET(bb_item, board_edge, True):
             return False
 
         # Check if ref is colliding with any FP
         for fp in modules:
             # Collides with Ctyd
-            # FIXME this yields false negative if all 4 corners and the center are not included. It is a problem with either very long text or very small footprints.
             fp_shape = fp.GetCourtyard(item.GetLayer()) # SHAPE_POLY_SET
-            if BB_in_SHAPE_POLY_SET(bb, fp_shape):
+            # if BB_in_SHAPE_POLY_SET(bb_item, fp_shape):
+            #     return False
+            if fp_shape.Collide(item_shape):
                 return False
 
             # Collides with Reference TODO: algo improvement to nudge it?
-            ref = fp.Reference()
-            if ((isReference and fp_item != fp) or not isReference) and isSilkscreen(ref) and ref.IsOnLayer(item.GetLayer()) and bb.Intersects(ref.GetBoundingBox()):
+            ref_fp = fp.Reference()
+            if ((isReference and fp_item != fp) or not isReference) and isSilkscreen(ref_fp) and ref_fp.IsOnLayer(item.GetLayer()) and bb_item.Intersects(ref_fp.GetBoundingBox()):
                 return False
 
             # Collides with value field (if it is on the silkscreen)
-            value = fp.Value()
-            if isSilkscreen(value) and ((not isReference and fp_item != fp) or isReference) and value.IsOnLayer(item.GetLayer()) and bb.Intersects(value.GetBoundingBox()):
+            value_fp = fp.Value()
+            if isSilkscreen(value_fp) and ((not isReference and fp_item != fp) or isReference) and value_fp.IsOnLayer(item.GetLayer()) and bb_item.Intersects(value_fp.GetBoundingBox()):
                 return False
 
         # Check if ref is colliding with any via
         for via in vias:
             if (via.TopLayer() == pcbnew.F_Cu and item.IsOnLayer(pcbnew.F_SilkS)) or (via.BottomLayer() == pcbnew.B_Cu and item.IsOnLayer(pcbnew.B_SilkS)):
-                if bb.Intersects(via.GetBoundingBox()):
+                if bb_item.Intersects(via.GetBoundingBox()):
                     return False
 
         # Check if ref is colliding with any hole
         for pad in tht_pads:
-            if bb.Intersects(pad.GetBoundingBox()):
+            if bb_item.Intersects(pad.GetBoundingBox()):
                 return False
         return True
 
-    def __sweep(self, isReference, fp, modules, board_edge, vias, tht_pads):
+    def __search_valid_position(self, isReference, fp, modules, board_edge, vias, tht_pads):
         if isReference:
             item = fp.Reference()
         else:
@@ -134,12 +134,12 @@ class AutoSilkscreen:
         initial_pos = item.GetPosition()
         fp_bb = fp.GetBoundingBox(False,False)
         item_bb = item.GetBoundingBox()
-        # if not IGNORE_ALREADY_VALID and self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): return 0
+        # if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): return 0
 
         try:
-            for i in range(0, self.max_offset_units, self.step_units):
+            for i in range(0, self.max_allowed_distance, self.step_size):
                 # Sweep x coords: top (left/right from center), bottom (left/right from center)
-                for j in range(0, int(fp_bb.GetWidth()/2 + i), self.step_units):
+                for j in range(0, int(fp_bb.GetWidth()/2 + i), self.step_size):
                     item.SetY(int(fp_bb.GetTop() - item_bb.GetHeight()/2.0*self.__deflate_factor__ - i))
                     item.SetX(int(fp_bb.GetCenter().x - j))
                     if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
@@ -155,7 +155,7 @@ class AutoSilkscreen:
                     if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
 
                 # Sweep y coords: left (top/bot from center), right (top/bot from center)
-                for j in range(0, int(fp_bb.GetHeight()/2 + i), self.step_units):
+                for j in range(0, int(fp_bb.GetHeight()/2 + i), self.step_size):
                     item.SetX(int(fp_bb.GetLeft() - item_bb.GetWidth()/2.0*self.__deflate_factor__ - i))
                     item.SetY(int(fp_bb.GetCenter().y - j))
                     if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
@@ -217,7 +217,7 @@ class AutoSilkscreen:
             ref_bb = ref.GetBoundingBox()
             value_bb = value.GetBoundingBox()        
             
-            max_fp_size = math.hypot(fp_bb.GetWidth(), fp_bb.GetHeight())/2 + self.max_offset_units
+            max_fp_size = math.hypot(fp_bb.GetWidth(), fp_bb.GetHeight())/2 + self.max_allowed_distance
             if isSilkscreen(ref) and isSilkscreen(value):
                 max_fp_size += max(math.hypot(ref_bb.GetWidth(),ref_bb.GetHeight()), math.hypot(value_bb.GetWidth(),value_bb.GetHeight()))/2
             elif isSilkscreen(ref):
@@ -238,10 +238,10 @@ class AutoSilkscreen:
             # Sweep positions
             if isSilkscreen(ref):
                 nb_total += 1
-                nb_moved += self.__sweep(True, fp, modules, board_edge, vias, tht_pads)
+                nb_moved += self.__search_valid_position(True, fp, modules, board_edge, vias, tht_pads)
             if isSilkscreen(value):
                 nb_total += 1
-                nb_moved += self.__sweep(False, fp, modules, board_edge, vias, tht_pads)
+                nb_moved += self.__search_valid_position(False, fp, modules, board_edge, vias, tht_pads)
 
         if self.debug:
             log("Execution time is {:.2f}s".format(timeit.default_timer() - starttime))
@@ -263,8 +263,8 @@ class AutoSilkscreenPlugin(pcbnew.ActionPlugin):
         if modal_result == wx.ID_OK:
             try:
                 a = AutoSilkscreen()
-                a.set_step_units(float(dialog.m_stepSize.GetValue().replace(',', '.')))
-                a.set_max_offset_units(float(dialog.m_maxDistance.GetValue().replace(',', '.')))
+                a.set_step_size(float(dialog.m_stepSize.GetValue().replace(',', '.')))
+                a.set_max_allowed_distance(float(dialog.m_maxDistance.GetValue().replace(',', '.')))
                 a.set_only_process_selection(dialog.m_onlyProcessSelection.IsChecked())
                 a.set_ignore_vias(dialog.m_silkscreenOnVia.IsChecked())
                 
