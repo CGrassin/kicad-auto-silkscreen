@@ -8,7 +8,6 @@ from pcbnew import VECTOR2I
 from . import auto_silkscreen_dialog
 
 # TODO
-# * Handle Solder Mask collision
 # * Handle Drawings collision
 # * Optimization: sort items in quads, only look for neighboring quads.
 # * Reduce text size option
@@ -77,7 +76,7 @@ class AutoSilkscreen:
         self.ignore_via = ignore_via
         return self
 
-    def __isPositionValid(self, item, fp_item, modules, board_edge, vias, tht_pads, isReference=True):
+    def __isPositionValid(self, item, fp_item, modules, board_edge, vias, tht_pads, masks, isReference=True):
         """Checks if a reference position is valid, based on:
         * Contained within board edges
         * Not colliding with any via
@@ -85,6 +84,7 @@ class AutoSilkscreen:
         * Not colliding with the courtyard of any component
         * Not colliding with the reference of any component
         * Not colliding with the value of any component
+        * Not colliding with solder mask
         """
         bb_item = item.GetBoundingBox() # BOX2I
         bb_item.SetSize(int(bb_item.GetWidth()*self.__deflate_factor__),int(bb_item.GetHeight()*self.__deflate_factor__))
@@ -123,9 +123,15 @@ class AutoSilkscreen:
         for pad in tht_pads:
             if bb_item.Intersects(pad.GetBoundingBox()):
                 return False
+
+        # Check if ref is colliding with solder mask
+        for mask in masks:
+            if (mask.IsOnLayer(pcbnew.F_Mask) and item.IsOnLayer(pcbnew.F_SilkS)) or (mask.IsOnLayer(pcbnew.B_Mask) and item.IsOnLayer(pcbnew.B_SilkS)) and mask.GetEffectiveShape().Collide(item_shape):
+                return False
+
         return True
 
-    def __search_valid_position(self, isReference, fp, modules, board_edge, vias, tht_pads):
+    def __search_valid_position(self, isReference, fp, modules, board_edge, vias, tht_pads, masks):
         if isReference:
             item = fp.Reference()
         else:
@@ -134,7 +140,7 @@ class AutoSilkscreen:
         initial_pos = item.GetPosition()
         fp_bb = fp.GetBoundingBox(False,False)
         item_bb = item.GetBoundingBox()
-        # if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): return 0
+        # if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): return 0
 
         try:
             for i in range(0, self.max_allowed_distance, self.step_size):
@@ -142,33 +148,33 @@ class AutoSilkscreen:
                 for j in range(0, int(fp_bb.GetWidth()/2 + i), self.step_size):
                     item.SetY(int(fp_bb.GetTop() - item_bb.GetHeight()/2.0*self.__deflate_factor__ - i))
                     item.SetX(int(fp_bb.GetCenter().x - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
 
                     item.SetX(int(fp_bb.GetCenter().x + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
 
                     item.SetY(int(fp_bb.GetBottom() + item_bb.GetHeight()/2.0*self.__deflate_factor__ + i))
                     item.SetX(int(fp_bb.GetCenter().x - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
 
                     item.SetX(int(fp_bb.GetCenter().x + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
 
                 # Sweep y coords: left (top/bot from center), right (top/bot from center)
                 for j in range(0, int(fp_bb.GetHeight()/2 + i), self.step_size):
                     item.SetX(int(fp_bb.GetLeft() - item_bb.GetWidth()/2.0*self.__deflate_factor__ - i))
                     item.SetY(int(fp_bb.GetCenter().y - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
 
                     item.SetY(int(fp_bb.GetCenter().y + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
 
                     item.SetX(int(fp_bb.GetRight() + item_bb.GetWidth()/2.0*self.__deflate_factor__ + i))
                     item.SetY(int(fp_bb.GetCenter().y - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
 
                     item.SetY(int(fp_bb.GetCenter().y + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
             # Reset to initial position if not able to be moved
             item.SetPosition(initial_pos)
             if self.debug:
@@ -235,13 +241,16 @@ class AutoSilkscreen:
             # Filter THT pads
             tht_pads =  filter_distance(fp_bb.GetCenter(), max_fp_size, tht_pads_all)
 
+            # Filter solder mask
+            masks = filter_distance(fp_bb.GetCenter(), max_fp_size, mask_all)
+
             # Sweep positions
             if isSilkscreen(ref):
                 nb_total += 1
-                nb_moved += self.__search_valid_position(True, fp, modules, board_edge, vias, tht_pads)
+                nb_moved += self.__search_valid_position(True, fp, modules, board_edge, vias, tht_pads, masks)
             if isSilkscreen(value):
                 nb_total += 1
-                nb_moved += self.__search_valid_position(False, fp, modules, board_edge, vias, tht_pads)
+                nb_moved += self.__search_valid_position(False, fp, modules, board_edge, vias, tht_pads, masks)
 
         if self.debug:
             log("Execution time is {:.2f}s".format(timeit.default_timer() - starttime))
