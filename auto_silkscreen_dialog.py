@@ -60,6 +60,15 @@ class AutoSilkscreenDialog ( wx.Dialog ):
 		self.m_onlyProcessSelection = wx.CheckBox( self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0 )
 		fgSizer1.Add( self.m_onlyProcessSelection, 1, wx.ALL|wx.EXPAND, 5 )
 
+		self.m_staticText101 = wx.StaticText( self, wx.ID_ANY, u"Allow silkscreen on via", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText101.Wrap( -1 )
+
+		fgSizer1.Add( self.m_staticText101, 0, wx.ALL, 5 )
+
+		self.m_silkscreenOnVia = wx.CheckBox( self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_silkscreenOnVia.SetValue(True)
+		fgSizer1.Add( self.m_silkscreenOnVia, 0, wx.ALL, 5 )
+
 
 		bSizer13.Add( fgSizer1, 1, wx.EXPAND, 5 )
 

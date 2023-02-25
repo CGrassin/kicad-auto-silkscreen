@@ -11,7 +11,6 @@ from . import auto_silkscreen_dialog
 # * Handle Solder Mask collision
 # * Handle Drawings collision
 # * Optimization: sort items in quads, only look for neighboring quads.
-# * Value on the SS instead of Fab layers
 # * Reduce text size
 
 IGNORE_ALREADY_VALID = False
@@ -30,13 +29,11 @@ def isSilkscreen(item):
 def log(msg):
     wx.LogMessage(str(msg))
 
-
 def BB_in_SHAPE_POLY_SET(bb,poly,all_in=False):
     """Checks if a BOX2I is contained in a SHAPE_POLY_SET."""
     if all_in:
         return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom())) and poly.Contains(VECTOR2I(bb.GetCenter().x,bb.GetCenter().y))
     return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom())) or poly.Contains(VECTOR2I(bb.GetCenter().x,bb.GetCenter().y))
-
 
 def distance(a, b):
     """Compute the distance between two points."""
@@ -58,6 +55,7 @@ class AutoSilkscreen:
         self.set_step_units(0.25)
         self.set_only_process_selection(False)
         self.set_debug(False)
+        self.set_ignore_vias(False)
         self.__deflate_factor__ = 1
 
     # Setters
@@ -76,6 +74,9 @@ class AutoSilkscreen:
         return self
     def set_debug(self, debug : bool):
         self.debug = debug
+        return self
+    def set_ignore_vias(self, ignore_via : bool):
+        self.ignore_via = ignore_via
         return self
 
     def __isPositionValid(self, item, fp_item, modules, board_edge, vias, tht_pads, isReference=True):
@@ -181,7 +182,7 @@ class AutoSilkscreen:
     def run(self):
         # Get PCB collision items
         # Get the vias (except buried vias)
-        vias_all = [trk for trk in self.pcb.Tracks() if  isinstance(trk,pcbnew.PCB_VIA) and (trk.TopLayer() == pcbnew.F_Cu or trk.BottomLayer() == pcbnew.B_Cu)]
+        vias_all = [trk for trk in self.pcb.Tracks() if not self.ignore_via and isinstance(trk,pcbnew.PCB_VIA) and (trk.TopLayer() == pcbnew.F_Cu or trk.BottomLayer() == pcbnew.B_Cu)]
         # Get the PTH/NPTH pads
         tht_pads_all = [pad for pad in self.pcb.GetPads() if pad.HasHole()]
         # Get the silkscreen drawings
@@ -265,6 +266,8 @@ class AutoSilkscreenPlugin(pcbnew.ActionPlugin):
                 a.set_step_units(float(dialog.m_stepSize.GetValue().replace(',', '.')))
                 a.set_max_offset_units(float(dialog.m_maxDistance.GetValue().replace(',', '.')))
                 a.set_only_process_selection(dialog.m_onlyProcessSelection.IsChecked())
+                a.set_ignore_vias(dialog.m_silkscreenOnVia.IsChecked())
+                
                 nb_moved, nb_total = a.run()
                 wx.MessageBox('Successfully moved {}/{} items!'.format(nb_moved,nb_total), 'AutoSilkscreen completed', wx.OK)
             except ValueError:
