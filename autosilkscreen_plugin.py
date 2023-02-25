@@ -3,15 +3,17 @@ import pcbnew
 import gettext
 import wx, math
 
-from pcbnew import ActionPlugin, GetBoard, SHAPE_POLY_SET, VECTOR2I, PCB_VIA
+from pcbnew import VECTOR2I
 
 from . import auto_silkscreen_dialog
 
+# This factor reduces the size of the effective bounding box of the silkscreen to determine collision.
 __deflate_factor__ = 0.9
 
 IGNORE_ALREADY_VALID = False
 
 def isSilkscreen(item):
+    """Checks if an item is a visible silkscreen item."""
     if item is None:
         return False
     elif not (item.IsOnLayer(pcbnew.B_SilkS) or item.IsOnLayer(pcbnew.F_SilkS)):    
@@ -22,11 +24,18 @@ def isSilkscreen(item):
     return True
 
 def BB_in_SHAPE_POLY_SET(bb,poly,all_in=False):
+    """Checks if a BOX2I is contained in a SHAPE_POLY_SET."""
     if all_in:
         return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) and poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) and poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom())) and poly.Contains(VECTOR2I(bb.GetCenter().x,bb.GetCenter().y))
     return poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetTop())) or poly.Contains(VECTOR2I(bb.GetLeft(),bb.GetBottom())) or poly.Contains(VECTOR2I(bb.GetRight(),bb.GetBottom())) or poly.Contains(VECTOR2I(bb.GetCenter().x,bb.GetCenter().y))
 
 def isPositionValid(item, modules, board_edge, vias, tht_pads):
+    """Checks if a reference position is valid, based on:
+    * Contained within board edges
+    * Not colliding with any via
+    * Not colliding with any hole
+    * Not colliding with the courtyard of any component
+    """
     bb = item.GetBoundingBox() # BOX2I
     bb.SetSize(int(bb.GetWidth()*__deflate_factor__),int(bb.GetHeight()*__deflate_factor__))
 
@@ -63,18 +72,15 @@ def isPositionValid(item, modules, board_edge, vias, tht_pads):
 
     return True
 
-def decimal_range(start, stop, increment):
-    while start < stop and not math.isclose(start, stop):
-        yield start
-        start += increment
-
-def log(msg):
+def log_debug(msg):
     wx.LogMessage(str(msg))
 
 def distance(a, b):
+    """Compute the distance between two points."""
     return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
 def filter_distance(item_center, max_d, list_items):
+    """Filters a list of items based on the distance to a point."""
     filtered_items = []
     for i in list_items:
         max_i_size = max(i.GetBoundingBox().GetHeight(), i.GetBoundingBox().GetWidth())
@@ -97,7 +103,7 @@ def optimize(max_offset,step,only_process_selection,debug=False):
 
     # Get PCB collision items
     # Get the vias (except buried vias)
-    vias_all = [trk for trk in pcb.Tracks() if  isinstance(trk,PCB_VIA) and (trk.TopLayer() == pcbnew.F_Cu or trk.BottomLayer() == pcbnew.B_Cu)]
+    vias_all = [trk for trk in pcb.Tracks() if  isinstance(trk,pcbnew.PCB_VIA) and (trk.TopLayer() == pcbnew.F_Cu or trk.BottomLayer() == pcbnew.B_Cu)]
     # Get the PTH/NPTH pads
     tht_pads_all = [pad for pad in pcb.GetPads() if pad.HasHole()]
     # Get the silkscreen drawings
@@ -107,7 +113,7 @@ def optimize(max_offset,step,only_process_selection,debug=False):
     # Get footprints
     fp_all = [fp for fp in pcb.GetFootprints()]
     # Get board outline
-    board_edge = SHAPE_POLY_SET()
+    board_edge = pcbnew.SHAPE_POLY_SET()
     pcb.GetBoardPolygonOutlines(board_edge)
 
     if debug:
@@ -145,9 +151,9 @@ def optimize(max_offset,step,only_process_selection,debug=False):
         # Sweep positions
         initial_pos = ref.GetPosition()
         try:
-            for i in decimal_range(0, max_offset_units, step_units):
+            for i in range(0, max_offset_units, step_units):
                 # Sweep x coords: top (left/right from center), bottom (left/right from center)
-                for j in decimal_range(0, fp_bb.GetWidth()/2 + i, step_units):
+                for j in range(0, int(fp_bb.GetWidth()/2 + i), step_units):
                     ref.SetY(int(fp_bb.GetTop() - ref_bb.GetHeight()/2.0*__deflate_factor__ - i))
                     ref.SetX(int(fp_bb.GetCenter().x - j))
                     if isPositionValid(ref, modules, board_edge, vias, tht_pads): raise StopIteration 
@@ -163,7 +169,7 @@ def optimize(max_offset,step,only_process_selection,debug=False):
                     if isPositionValid(ref, modules, board_edge, vias, tht_pads): raise StopIteration 
 
                 # Sweep y coords: left (top/bot from center), right (top/bot from center)
-                for j in decimal_range(0, fp_bb.GetHeight()/2 + i, step_units):
+                for j in range(0, int(fp_bb.GetHeight()/2 + i), step_units):
                     ref.SetX(int(fp_bb.GetLeft() - ref_bb.GetWidth()/2.0*__deflate_factor__ - i))
                     ref.SetY(int(fp_bb.GetCenter().y - j))
                     if isPositionValid(ref, modules, board_edge, vias, tht_pads): raise StopIteration 
@@ -179,14 +185,17 @@ def optimize(max_offset,step,only_process_selection,debug=False):
                     if isPositionValid(ref, modules, board_edge, vias, tht_pads): raise StopIteration 
             # Reset to initial position if not able to be moved
             ref.SetPosition(initial_pos)
-            log("{} couldn't be moved".format(str(fp.GetReference())))
+            if debug:
+                log_debug("{} couldn't be moved".format(str(fp.GetReference())))
         except StopIteration:
-            log("{} moved to ({:.2f},{:.2f})".format(str(fp.GetReference()), ToUserUnit(ref.GetPosition().x), ToUserUnit(ref.GetPosition().y)))
+            if debug:
+                log_debug("{} moved to ({:.2f},{:.2f})".format(str(fp.GetReference()), ToUserUnit(ref.GetPosition().x), ToUserUnit(ref.GetPosition().y)))
             nb_moved += 1
 
     if debug:
-        log("Execution time is {:.2f}s".format(timeit.default_timer() - starttime))
-    log('Finished ({}/{} moved)'.format(nb_moved,nb_total))
+        log_debug("Execution time is {:.2f}s".format(timeit.default_timer() - starttime))
+        log_debug('Finished ({}/{} moved)'.format(nb_moved,nb_total))
+    return nb_moved, nb_total
 
 class AutoSilkscreenPlugin(pcbnew.ActionPlugin):
     def defaults(self):
@@ -205,8 +214,9 @@ class AutoSilkscreenPlugin(pcbnew.ActionPlugin):
                 step_size = float(dialog.m_stepSize.GetValue().replace(',', '.'))
                 if max_d <= 0 or step_size <= 0:
                     raise ValueError
-                optimize(max_d, step_size, dialog.m_onlyProcessSelection.IsChecked())
+                nb_moved, nb_total = optimize(max_d, step_size, dialog.m_onlyProcessSelection.IsChecked())
+                wx.MessageBox('Successfully moved {}/{} references!'.format(nb_moved,nb_total), 'AutoSilkscreen completed', wx.OK)
             except ValueError:
-                wx.MessageBox("Invalid value entered.")
+                wx.MessageBox("Invalid value entered.",'AutoSilkscreen error',wx.ICON_ERROR | wx.OK)
         dialog.Destroy()
             
