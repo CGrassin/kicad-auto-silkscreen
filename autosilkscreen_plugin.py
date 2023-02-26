@@ -76,7 +76,7 @@ class AutoSilkscreen:
         self.ignore_via = ignore_via
         return self
 
-    def __isPositionValid(self, item, fp_item, modules, board_edge, vias, tht_pads, masks, isReference=True):
+    def __isPositionValid(self, item, fp_item, modules, board_edge, vias, tht_pads, masks, drawings, isReference=True):
         """Checks if a reference position is valid, based on:
         * Contained within board edges
         * Not colliding with any via
@@ -129,9 +129,13 @@ class AutoSilkscreen:
             if (mask.IsOnLayer(pcbnew.F_Mask) and item.IsOnLayer(pcbnew.F_SilkS)) or (mask.IsOnLayer(pcbnew.B_Mask) and item.IsOnLayer(pcbnew.B_SilkS)) and mask.GetEffectiveShape().Collide(item_shape):
                 return False
 
+        # Check if ref is colliding with drawings
+        for drawing in drawings:
+            if drawing.IsOnLayer(item.GetLayer()) and drawing.GetEffectiveShape(item.GetLayer()).Collide(item_shape):
+                return False
         return True
 
-    def __search_valid_position(self, isReference, fp, modules, board_edge, vias, tht_pads, masks):
+    def __search_valid_position(self, isReference, fp, modules, board_edge, vias, tht_pads, masks, dwgs):
         if isReference:
             item = fp.Reference()
         else:
@@ -140,7 +144,7 @@ class AutoSilkscreen:
         initial_pos = item.GetPosition()
         fp_bb = fp.GetBoundingBox(False,False)
         item_bb = item.GetBoundingBox()
-        # if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): return 0
+        # if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): return 0
 
         try:
             for i in range(0, self.max_allowed_distance, self.step_size):
@@ -148,33 +152,33 @@ class AutoSilkscreen:
                 for j in range(0, int(fp_bb.GetWidth()/2 + i), self.step_size):
                     item.SetY(int(fp_bb.GetTop() - item_bb.GetHeight()/2.0*self.__deflate_factor__ - i))
                     item.SetX(int(fp_bb.GetCenter().x - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
 
                     item.SetX(int(fp_bb.GetCenter().x + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
 
                     item.SetY(int(fp_bb.GetBottom() + item_bb.GetHeight()/2.0*self.__deflate_factor__ + i))
                     item.SetX(int(fp_bb.GetCenter().x - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
 
                     item.SetX(int(fp_bb.GetCenter().x + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
 
                 # Sweep y coords: left (top/bot from center), right (top/bot from center)
                 for j in range(0, int(fp_bb.GetHeight()/2 + i), self.step_size):
                     item.SetX(int(fp_bb.GetLeft() - item_bb.GetWidth()/2.0*self.__deflate_factor__ - i))
                     item.SetY(int(fp_bb.GetCenter().y - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
 
                     item.SetY(int(fp_bb.GetCenter().y + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
 
                     item.SetX(int(fp_bb.GetRight() + item_bb.GetWidth()/2.0*self.__deflate_factor__ + i))
                     item.SetY(int(fp_bb.GetCenter().y - j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
 
                     item.SetY(int(fp_bb.GetCenter().y + j))
-                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, isReference): raise StopIteration 
+                    if self.__isPositionValid(item, fp, modules, board_edge, vias, tht_pads, masks, dwgs, isReference): raise StopIteration 
             # Reset to initial position if not able to be moved
             item.SetPosition(initial_pos)
             if self.debug:
@@ -192,9 +196,15 @@ class AutoSilkscreen:
         # Get the PTH/NPTH pads
         tht_pads_all = [pad for pad in self.pcb.GetPads() if pad.HasHole()]
         # Get the silkscreen drawings
-        dwgs_all = [dwg for dwg in self.pcb.GetDrawings() if isSilkscreen(dwg)]
+        try:
+            dwgs_all = [dwg for dwg in self.pcb.GetDrawings() if isSilkscreen(dwg)]
+        except:
+            dwgs_all = []
         # Get solder mask
-        mask_all = [dwg for dwg in self.pcb.GetDrawings() if dwg.IsOnLayer(pcbnew.F_Mask) or dwg.IsOnLayer(pcbnew.B_Mask)]
+        try:
+            mask_all = [dwg for dwg in self.pcb.GetDrawings() if dwg.IsOnLayer(pcbnew.F_Mask) or dwg.IsOnLayer(pcbnew.B_Mask)]
+        except:
+            mask_all = []
         # Get footprints
         fp_all = [fp for fp in self.pcb.GetFootprints()]
         # Get board outline
@@ -233,24 +243,23 @@ class AutoSilkscreen:
 
             # Filter the vias
             vias = filter_distance(fp_bb.GetCenter(), max_fp_size, vias_all)
-
             # Filter footprints
             # FIXME does not account for REF/VALUE size!
             modules =  filter_distance(fp_bb.GetCenter(), max_fp_size, fp_all)
-
             # Filter THT pads
             tht_pads =  filter_distance(fp_bb.GetCenter(), max_fp_size, tht_pads_all)
-
             # Filter solder mask
             masks = filter_distance(fp_bb.GetCenter(), max_fp_size, mask_all)
+            # Filter drawings
+            dwgs = filter_distance(fp_bb.GetCenter(), max_fp_size, dwgs_all)
 
             # Sweep positions
             if isSilkscreen(ref):
                 nb_total += 1
-                nb_moved += self.__search_valid_position(True, fp, modules, board_edge, vias, tht_pads, masks)
+                nb_moved += self.__search_valid_position(True, fp, modules, board_edge, vias, tht_pads, masks, dwgs)
             if isSilkscreen(value):
                 nb_total += 1
-                nb_moved += self.__search_valid_position(False, fp, modules, board_edge, vias, tht_pads, masks)
+                nb_moved += self.__search_valid_position(False, fp, modules, board_edge, vias, tht_pads, masks, dwgs)
 
         if self.debug:
             log("Execution time is {:.2f}s".format(timeit.default_timer() - starttime))
@@ -262,7 +271,7 @@ class AutoSilkscreenPlugin(pcbnew.ActionPlugin):
     def defaults(self):
         self.name = u"AutoSilkscreen"
         self.category = u"Modify PCB"
-        self.description = u"Moves silkscreen"
+        self.description = u"Automatically moves the silkscreen reference designators to prevent overlap"
         self.show_toolbar_button = True
         self.icon_file_name = os.path.join(os.path.dirname(__file__), 'logo.png')
 

@@ -42,6 +42,8 @@ class AutoSilkscreenDialog ( wx.Dialog ):
 		fgSizer1.Add( self.m_staticText4, 1, wx.ALL|wx.EXPAND, 5 )
 
 		self.m_maxDistance = wx.TextCtrl( self, wx.ID_ANY, u"3", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_maxDistance.SetToolTip( u"Maximum allowed distance from footprint to reference. Higher values decrease performance." )
+
 		fgSizer1.Add( self.m_maxDistance, 1, wx.ALL|wx.EXPAND, 5 )
 
 		self.m_staticText41 = wx.StaticText( self, wx.ID_ANY, u"Step size (mm)", wx.DefaultPosition, wx.DefaultSize, 0 )
@@ -50,15 +52,9 @@ class AutoSilkscreenDialog ( wx.Dialog ):
 		fgSizer1.Add( self.m_staticText41, 1, wx.ALL|wx.EXPAND, 5 )
 
 		self.m_stepSize = wx.TextCtrl( self, wx.ID_ANY, u"0.25", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_stepSize.SetToolTip( u"Amount the silkscreen is moved for each iteration. Lower values decrease performance." )
+
 		fgSizer1.Add( self.m_stepSize, 1, wx.ALL|wx.EXPAND, 5 )
-
-		self.m_staticText10 = wx.StaticText( self, wx.ID_ANY, u"Only process selection", wx.DefaultPosition, wx.DefaultSize, 0 )
-		self.m_staticText10.Wrap( -1 )
-
-		fgSizer1.Add( self.m_staticText10, 1, wx.ALL|wx.EXPAND, 5 )
-
-		self.m_onlyProcessSelection = wx.CheckBox( self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0 )
-		fgSizer1.Add( self.m_onlyProcessSelection, 1, wx.ALL|wx.EXPAND, 5 )
 
 		self.m_staticText101 = wx.StaticText( self, wx.ID_ANY, u"Allow silkscreen on via", wx.DefaultPosition, wx.DefaultSize, 0 )
 		self.m_staticText101.Wrap( -1 )
@@ -67,7 +63,19 @@ class AutoSilkscreenDialog ( wx.Dialog ):
 
 		self.m_silkscreenOnVia = wx.CheckBox( self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0 )
 		self.m_silkscreenOnVia.SetValue(True)
+		self.m_silkscreenOnVia.SetToolTip( u"Check to allow the plugin to put silkscreen on top of vias." )
+
 		fgSizer1.Add( self.m_silkscreenOnVia, 0, wx.ALL, 5 )
+
+		self.m_staticText10 = wx.StaticText( self, wx.ID_ANY, u"Only process selection", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText10.Wrap( -1 )
+
+		fgSizer1.Add( self.m_staticText10, 1, wx.ALL|wx.EXPAND, 5 )
+
+		self.m_onlyProcessSelection = wx.CheckBox( self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_onlyProcessSelection.SetToolTip( u"Check to only move the silkscreen of the selected footprints." )
+
+		fgSizer1.Add( self.m_onlyProcessSelection, 1, wx.ALL|wx.EXPAND, 5 )
 
 
 		bSizer13.Add( fgSizer1, 1, wx.EXPAND, 5 )

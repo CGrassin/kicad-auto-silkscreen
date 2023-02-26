@@ -1,0 +1,27 @@
+{
+    "$schema": "https://go.kicad.org/pcm/schemas/v1",
+    "name": "Auto Silkscreen Placer",
+    "description": "Automatically moves the silkscreen reference designators to prevent overlap",
+    "description_full": "This KiCad plugin automatically computes a position for the silkscreen reference designators that is free of overlap with other PCB elements (footprints, solder mask, vias, etc.).",
+    "identifier": "com.github.cgrassin.kicad-auto-silkscreen",
+    "type": "plugin",
+    "author": {
+        "name": "Charles Grassin",
+        "contact": {
+            "github": "https://github.com/CGrassin",
+            "web": "https://charleslabs.fr"
+        }
+    },
+    "license": "MIT",
+    "resources": {
+        "homepage": "https://github.com/CGrassin/kicad-auto-silkscreen"
+    },
+    "versions": [
+        {
+            "version": "1.0",
+            "status": "stable",
+            "kicad_version": "6.0",
+            "kicad_version_max": "7.0"
+        }
+    ]
+}
