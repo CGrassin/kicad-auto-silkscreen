@@ -209,7 +209,7 @@ class AutoSilkscreen:
         fp_all = [fp for fp in self.pcb.GetFootprints()]
         # Get board outline
         board_edge = pcbnew.SHAPE_POLY_SET()
-        self.pcb.GetBoardPolygonOutlines(board_edge)
+        self.pcb.GetBoardPolygonOutlines(board_edge, aInferOutlineIfNecessary=True)
 
         if self.debug:
             import timeit
